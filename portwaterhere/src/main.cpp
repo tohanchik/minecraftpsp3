@@ -70,6 +70,8 @@ static Texture g_texBtnSquare;
 static Texture g_texBtnTriangle;
 static Texture g_texBtnR;
 static Texture g_texBtnL;
+static float g_tickAlpha = 0.0f;
+static float s_levelTickAccum = 0.0f;
 
 
 enum class AppMode {
@@ -131,48 +133,19 @@ static bool game_init() {
 static void game_update(float dt) {
   PSPInput_Update();
   if (g_level) {
-    g_level->tick();
-  }
-
-  // Animation for WATER blocks
-  static float textureTimer = 0.0f;
-  textureTimer += dt;
-  if (textureTimer >= 0.125f) { 
-    textureTimer = 0.0f;
-    static int textureIdx = 0;
-    textureIdx = (textureIdx + 1) % 4;
-
-    uint8_t tx = 13, ty = 12;
-    switch (textureIdx) {
-      case 0: tx = 13; ty = 12; break; 
-      case 1: tx = 14; ty = 12; break;
-      case 2: tx = 15; ty = 12; break;
-      case 3: tx = 14; ty = 13; break;
+    const float tickStep = 1.0f / 20.0f; // Minecraft-like 20 TPS
+    s_levelTickAccum += dt;
+    int ticks = 0;
+    while (s_levelTickAccum >= tickStep && ticks < 5) {
+      g_level->setSimulationFocus((int)floorf(g_player->getX()), (int)floorf(g_player->getY()), (int)floorf(g_player->getZ()), 24);
+      g_level->tick();
+      s_levelTickAccum -= tickStep;
+      ticks++;
     }
-
-    g_blockUV[BLOCK_WATER_STILL] = {tx, ty, tx, ty, tx, ty};
-    g_blockUV[BLOCK_WATER_FLOW] = {tx, ty, tx, ty, tx, ty};
-
-    // ONLY update chunks within a 4-block radius of the player
-    int minCX = (int)(g_player->getX() - 4.0f) >> 4;
-    int maxCX = (int)(g_player->getX() + 4.0f) >> 4;
-    int minCZ = (int)(g_player->getZ() - 4.0f) >> 4;
-    int maxCZ = (int)(g_player->getZ() + 4.0f) >> 4;
-
-    for (int cx = minCX; cx <= maxCX; cx++) {
-      for (int cz = minCZ; cz <= maxCZ; cz++) {
-        if (cx >= 0 && cx < WORLD_CHUNKS_X && cz >= 0 && cz < WORLD_CHUNKS_Z) {
-          Chunk* c = g_level->getChunk(cx, cz);
-          if (c) {
-            for (int sy = 0; sy < 4; sy++) {
-              c->dirty[sy] = true;
-            }
-          }
-        }
-      }
-    }
+    g_tickAlpha = s_levelTickAccum / tickStep;
+    if (g_tickAlpha < 0.0f) g_tickAlpha = 0.0f;
+    if (g_tickAlpha > 1.0f) g_tickAlpha = 1.0f;
   }
-
 
   if (g_player) {
     g_player->update(dt);
@@ -342,7 +315,7 @@ static void game_render() {
   }
 
   if (g_cloudRenderer && g_player)
-    g_cloudRenderer->renderClouds(g_player->getX(), g_player->getY(), g_player->getZ(), 0.0f, fogColor);
+    g_cloudRenderer->renderClouds(g_player->getX(), g_player->getY(), g_player->getZ(), g_tickAlpha, fogColor);
 
   drawHUD();
 
